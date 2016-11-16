@@ -347,8 +347,7 @@ process_patch_file()
 	local description=$2
 
 	# detect and remove files which patch will create
-	LANGUAGE=english patch --batch --dry-run -p1 -N < $patch | grep create \
-		| awk '{print $NF}' | sed -n 's/,//p' | xargs -I % sh -c 'rm %'
+	lsdiff -s --strip=1 $patch | grep '^+' | awk '{print $2}' | xargs -I % sh -c 'rm -f %'
 
 	# main patch command
 	echo "Processing file $patch" >> $DEST/debug/patching.log
@@ -459,20 +458,22 @@ overlayfs_wrapper()
 	if [[ $operation == wrap ]]; then
 		local srcdir="$2"
 		local description="$3"
-		local tempdir=$(mktemp -d)
-		local workdir=$(mktemp -d)
+		mkdir -p /tmp/overlay_components/
+		local tempdir=$(mktemp -d --tmpdir="/tmp/overlay_components/")
+		local workdir=$(mktemp -d --tmpdir="/tmp/overlay_components/")
 		local mergeddir=$(mktemp -d --suffix="_$description")
 		mount -t overlay overlay -o lowerdir="$srcdir",upperdir="$tempdir",workdir="$workdir" "$mergeddir"
 		# this is executed in a subshell, so use temp files to pass extra data outside
 		echo "$tempdir" >> /tmp/.overlayfs_wrapper_cleanup
 		echo "$mergeddir" >> /tmp/.overlayfs_wrapper_umount
+		echo "$mergeddir" >> /tmp/.overlayfs_wrapper_cleanup
 		echo "$mergeddir"
 		return
 	fi
 	if [[ $operation == cleanup ]]; then
 		if [[ -f /tmp/.overlayfs_wrapper_umount ]]; then
 			for dir in $(</tmp/.overlayfs_wrapper_umount); do
-				[[ $dir == /tmp/* ]] && umount "$dir"
+				[[ $dir == /tmp/* ]] && umount -l "$dir" > /dev/null 2>&1
 			done
 		fi
 		if [[ -f /tmp/.overlayfs_wrapper_cleanup ]]; then
